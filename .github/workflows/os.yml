@@ -1,4 +1,5 @@
 name: build os
+
 on:
   workflow_dispatch:
   schedule:
@@ -8,41 +9,54 @@ on:
       - main
     paths:
       - oses/**
+
 permissions:
+  contents: read
   packages: write
 
 jobs:
   push:
     name: "yolks:${{ matrix.oses }}"
     runs-on: self-hosted
+
     strategy:
       fail-fast: false
       matrix:
         oses:
-          - alpine
           - debian
-          - ubuntu
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
         with:
           buildkitd-flags: --debug
-      - id: lower-repo
-        name: Repository to lowercase
+
+      - name: Repository to lowercase
+        id: lower-repo
         run: |
-          echo "repository=${GITHUB_REPOSITORY_OWNER@L}" >> $GITHUB_OUTPUT
+          echo "repository=${GITHUB_REPOSITORY_OWNER@L}" >> "$GITHUB_OUTPUT"
+
+      - name: Set image tags
+        id: tags
+        run: |
+          TAGS="ghcr.io/${{ steps.lower-repo.outputs.repository }}/yolks:${{ matrix.oses }}"
+          if [ "${{ github.repository_owner }}" = "danios" ]; then
+            TAGS="$TAGS,ghcr.io/danios/yolks:${{ matrix.oses }}"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ steps.lower-repo.outputs.repository }}
-          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: docker/build-push-action@v6
         with:
           context: ./oses/${{ matrix.oses }}
           file: ./oses/${{ matrix.oses }}/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ghcr.io/${{ steps.lower-repo.outputs.repository }}/yolks:${{ matrix.oses }}
-            ${{ github.repository_owner == 'danios' && format('ghcr.io/danios/yolks:{0}', matrix.oses) || '' }}
+          tags: ${{ steps.tags.outputs.tags }}
